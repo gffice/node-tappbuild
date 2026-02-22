@@ -3,8 +3,6 @@ name: Deploy static content to Pages
 
 on:
   # Runs on pushes targeting the default branch
-  push:
-    branches: ["main"]
   schedule:
   # 每天的5点运行一次任务
   - cron: '0 21 * * *'
@@ -100,3 +98,39 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Read last active date
+        id: read_date
+        run: |
+          if [ -f last-active.txt ]; then
+            last_date=$(cat last-active.txt)
+          else
+            # 如果文件不存在，则设置为一个很早的日期，确保触发首次提交
+            last_date="1970-01-01"
+          fi
+          echo "last_date=$last_date" >> $GITHUB_OUTPUT
+
+      - name: Calculate days since last update
+        id: calc_days
+        run: |
+          last_date="${{ steps.read_date.outputs.last_date }}"
+          current_date=$(date +%Y-%m-%d)
+          
+          # 将日期转换为秒级时间戳
+          last_seconds=$(date -d "$last_date" +%s)
+          current_seconds=$(date -d "$current_date" +%s)
+          
+          # 计算天数差
+          diff_days=$(( (current_seconds - last_seconds) / 86400 ))
+          echo "diff_days=$diff_days" >> $GITHUB_OUTPUT
+          echo "current_date=$current_date" >> $GITHUB_OUTPUT
+
+      - name: Update last-active.txt if needed
+        if: steps.calc_days.outputs.diff_days >= 30
+        run: |
+          echo "${{ steps.calc_days.outputs.current_date }}" > last-active.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add last-active.txt
+          git commit -m "chore: update last active date [skip ci]"
+          git push
